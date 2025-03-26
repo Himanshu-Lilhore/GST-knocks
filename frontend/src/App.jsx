@@ -16,6 +16,11 @@ function App() {
   const [selectedContactId, setSelectedContactId] = useState(null);
   const [highlightedContactId, setHighlightedContactId] = useState(null);
   const contactRefs = useRef({});
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [newGstin, setNewGstin] = useState('');
+
 
   useEffect(() => {
     fetchContacts();
@@ -93,6 +98,39 @@ function App() {
     });
   };
 
+  const handleAddContact = async (e) => {
+    e.preventDefault();
+
+    // Validate required fields
+    if (!newName.trim() || !newPhone.trim()) {
+      toast.error('Name and phone number are required');
+      return;
+    }
+
+    try {
+      const response = await axios.post(`${BACKEND_URL}/api/contacts`, {
+        name: newName.trim(),
+        phoneNumber: newPhone.trim(),
+        gstin: newGstin.trim()
+      });
+
+      if (response.data.success) {
+        toast.success('Contact added successfully');
+        // Refresh contacts
+        fetchContacts();
+        // Reset form fields
+        setNewName('');
+        setNewPhone('');
+        setNewGstin('');
+        setShowAddContact(false);
+      }
+    } catch (error) {
+      const message = error.response?.data?.error || 'Failed to add contact';
+      toast.error(message);
+    }
+  };
+
+
   const getContactStatus = (contact) => {
     if (!contact.called) return 'Pending';
     return 'Done';
@@ -101,7 +139,7 @@ function App() {
   const filteredContacts = contacts.filter(contact => {
     const matchesFilter = filter === 'all' ? true :
       filter === 'pending' ? !contact.called :
-      filter === 'done' ? contact.called : true;
+        filter === 'done' ? contact.called : true;
 
     const matchesSearch = searchQuery === '' ? true :
       contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -110,7 +148,7 @@ function App() {
     return matchesFilter && matchesSearch;
   });
 
-  const suggestions = contacts.filter(contact => 
+  const suggestions = contacts.filter(contact =>
     searchQuery !== '' && (
       contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       contact.phoneNumber.includes(searchQuery)
@@ -148,18 +186,18 @@ function App() {
   // Add scroll effect when selectedContactId changes
   useEffect(() => {
     if (selectedContactId && contactRefs.current[selectedContactId]) {
-      contactRefs.current[selectedContactId].scrollIntoView({ 
+      contactRefs.current[selectedContactId].scrollIntoView({
         behavior: 'smooth',
         block: 'center'
       });
       setHighlightedContactId(selectedContactId);
       setSelectedContactId(null); // Reset after scrolling
-      
+
       // Remove highlight after 2 seconds
       const timer = setTimeout(() => {
         setHighlightedContactId(null);
       }, 2000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [selectedContactId]);
@@ -167,23 +205,84 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <Toaster position="top-right" />
-      
+
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold text-center mb-8">GST knocks</h1>
-        
-        <div className="bg-white rounded-lg shadow p-6 mb-6">
+        <h1 className="text-4xl font-extrabold text-center mb-4">GST knocks</h1>
+
+        {/* Combined File Upload and Add Contact Button Container */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <input
             type="file"
             accept=".pdf,.xlsx,.xls"
             onChange={handleFileUpload}
-            className="block w-full text-sm text-gray-500
+            className="w-full md:w-auto text-sm text-gray-500
               file:mr-4 file:py-2 file:px-4
               file:rounded-full file:border-0
               file:text-sm file:font-semibold
               file:bg-blue-50 file:text-blue-700
               hover:file:bg-blue-100"
           />
+          <button
+            onClick={() => setShowAddContact(!showAddContact)}
+            className="bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded w-full md:w-auto"
+          >
+            {showAddContact ? 'Cancel' : 'Add Contact Manually'}
+          </button>
         </div>
+
+        {/* Add Contact Form */}
+        {showAddContact && (
+          <div className="bg-white rounded-lg shadow p-6 mb-6">
+            <form onSubmit={handleAddContact}>
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2" htmlFor="name">
+                  Name<span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="name"
+                  type="text"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2" htmlFor="phone">
+                  Phone Number<span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="phone"
+                  type="text"
+                  value={newPhone}
+                  onChange={(e) => setNewPhone(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div className="mb-4">
+                <label className="block text-gray-700 mb-2" htmlFor="gstin">
+                  GST Number (Optional)
+                </label>
+                <input
+                  id="gstin"
+                  type="text"
+                  value={newGstin}
+                  onChange={(e) => setNewGstin(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded"
+                >
+                  Save Contact
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
 
         {/* Search bar */}
         <div className="relative mb-6" ref={searchRef}>
@@ -200,16 +299,15 @@ function App() {
               className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          
+
           {/* Suggestions dropdown */}
           {showSuggestions && suggestions.length > 0 && (
             <div className="absolute z-20 w-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-60 overflow-y-auto">
               {suggestions.map((contact, index) => (
                 <div
                   key={contact._id}
-                  className={`px-4 py-2 hover:bg-gray-50 cursor-pointer ${
-                    index !== suggestions.length - 1 ? 'border-b border-gray-100' : ''
-                  }`}
+                  className={`px-4 py-2 hover:bg-gray-50 cursor-pointer ${index !== suggestions.length - 1 ? 'border-b border-gray-100' : ''
+                    }`}
                   onClick={() => {
                     setSearchQuery(contact.name);
                     setShowSuggestions(false);
@@ -230,11 +328,10 @@ function App() {
           <div className="flex bg-gray-100 rounded-full p-1 w-full">
             <button
               onClick={() => setFilter('all')}
-              className={`flex-1 px-6 py-2 rounded-full text-sm font-medium transition-all relative border-2 ${
-                filter === 'all'
-                  ? 'bg-white text-blue-600 shadow-md border-blue-200'
-                  : 'text-gray-600 hover:text-gray-900 border-transparent'
-              }`}
+              className={`flex-1 px-6 py-2 rounded-full text-sm font-medium transition-all relative border-2 ${filter === 'all'
+                ? 'bg-white text-blue-600 shadow-md border-blue-200'
+                : 'text-gray-600 hover:text-gray-900 border-transparent'
+                }`}
             >
               All
               <span className="absolute -top-1 -right-1 bg-blue-100 text-blue-600 text-xs font-semibold px-2 py-0.5 rounded-full">
@@ -243,11 +340,10 @@ function App() {
             </button>
             <button
               onClick={() => setFilter('pending')}
-              className={`flex-1 px-6 py-2 rounded-full text-sm font-medium transition-all relative border-2 ${
-                filter === 'pending'
-                  ? 'bg-white text-yellow-600 shadow-md border-yellow-200'
-                  : 'text-gray-600 hover:text-gray-900 border-transparent'
-              }`}
+              className={`flex-1 px-6 py-2 rounded-full text-sm font-medium transition-all relative border-2 ${filter === 'pending'
+                ? 'bg-white text-yellow-600 shadow-md border-yellow-200'
+                : 'text-gray-600 hover:text-gray-900 border-transparent'
+                }`}
             >
               Pending
               <span className="absolute -top-1 -right-1 bg-yellow-100 text-yellow-600 text-xs font-semibold px-2 py-0.5 rounded-full">
@@ -256,11 +352,10 @@ function App() {
             </button>
             <button
               onClick={() => setFilter('done')}
-              className={`flex-1 px-6 py-2 rounded-full text-sm font-medium transition-all relative border-2 ${
-                filter === 'done'
-                  ? 'bg-white text-green-600 shadow-md border-green-200'
-                  : 'text-gray-600 hover:text-gray-900 border-transparent'
-              }`}
+              className={`flex-1 px-6 py-2 rounded-full text-sm font-medium transition-all relative border-2 ${filter === 'done'
+                ? 'bg-white text-green-600 shadow-md border-green-200'
+                : 'text-gray-600 hover:text-gray-900 border-transparent'
+                }`}
             >
               Done
               <span className="absolute -top-1 -right-1 bg-green-100 text-green-600 text-xs font-semibold px-2 py-0.5 rounded-full">
@@ -278,11 +373,10 @@ function App() {
               <div
                 key={contact._id}
                 ref={el => contactRefs.current[contact._id] = el}
-                className={`bg-white rounded-lg shadow p-4 cursor-pointer hover:bg-gray-50 transition-all duration-300 select-none ${
-                  highlightedContactId === contact._id 
-                    ? 'ring-2 ring-blue-500 bg-blue-50' 
-                    : ''
-                }`}
+                className={`bg-white rounded-lg shadow p-4 cursor-pointer hover:bg-gray-50 transition-all duration-300 select-none ${highlightedContactId === contact._id
+                  ? 'ring-2 ring-blue-500 bg-blue-50'
+                  : ''
+                  }`}
                 onClick={() => toggleCard(contact._id)}
               >
                 <div className="flex items-center justify-between">
@@ -299,38 +393,35 @@ function App() {
                       </span>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center gap-2">
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         handleCall(contact);
                       }}
-                      className={`flex items-center px-4 py-2 rounded-lg select-none ${
-                        contact.called
-                          ? 'bg-gray-100 hover:bg-gray-200 text-gray-600'
-                          : 'bg-yellow-400/80 text-black hover:bg-yellow-500'
-                      }`}
+                      className={`flex items-center px-4 py-2 rounded-lg select-none ${contact.called
+                        ? 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                        : 'bg-yellow-400/80 text-black hover:bg-yellow-500'
+                        }`}
                     >
                       <PhoneIcon className="h-5 w-5 mr-2" />
                       Call
                     </button>
-                    
-                    <ChevronDownIcon 
-                      className={`h-5 w-5 text-gray-500 transition-transform duration-200 select-none ${
-                        expandedCards.has(contact._id) ? 'rotate-180' : ''
-                      }`}
+
+                    <ChevronDownIcon
+                      className={`h-5 w-5 text-gray-500 transition-transform duration-200 select-none ${expandedCards.has(contact._id) ? 'rotate-180' : ''
+                        }`}
                     />
                   </div>
                 </div>
-                
-                <div 
-                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
-                    expandedCards.has(contact._id) ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
-                  }`}
+
+                <div
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${expandedCards.has(contact._id) ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+                    }`}
                 >
                   <div className="mt-4 pt-4 border-t border-gray-100">
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-2">
                       <div className="flex justify-between items-center">
                         <button
                           onClick={(e) => {
@@ -342,7 +433,7 @@ function App() {
                           <TrashIcon className="h-5 w-5 mr-2" />
                           Delete
                         </button>
-                        
+
                         {!contact.called ? (
                           <button
                             onClick={(e) => {
@@ -366,13 +457,13 @@ function App() {
                           </button>
                         )}
                       </div>
-                      
+
                       {contact.gstin && (
-                        <div className="text-sm text-gray-500 select-none">
+                        <div className="text-sm text-gray-500 select-none mt-2">
                           GSTIN: {contact.gstin}
                         </div>
                       )}
-                      
+
                       {contact.called && contact.callDate && (
                         <div className="text-sm text-gray-500 select-none">
                           Contacted on: {formatDate(contact.callDate)}

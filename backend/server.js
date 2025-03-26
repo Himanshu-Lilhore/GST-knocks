@@ -56,7 +56,7 @@ const extractContactsFromExcel = (buffer) => {
   
   // Convert sheet to JSON
   const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
-  console.log('Excel rows:', rows); // Debug log
+  // console.log('Excel rows:', rows); // Debug log
   
   const contacts = [];
   
@@ -86,7 +86,7 @@ const extractContactsFromExcel = (buffer) => {
     )
   );
   
-  console.log('Column indices - GSTIN:', gstinColumnIndex, 'Name:', nameColumnIndex, 'Phone:', phoneColumnIndex);
+  // console.log('Column indices - GSTIN:', gstinColumnIndex, 'Name:', nameColumnIndex, 'Phone:', phoneColumnIndex);
   
   // Skip header row
   for (let i = 1; i < rows.length; i++) {
@@ -139,21 +139,21 @@ const extractContactsFromExcel = (buffer) => {
     }
   }
   
-  console.log('Extracted contacts from Excel:', contacts); // Debug log
+  // console.log('Extracted contacts from Excel:', contacts); // Debug log
   return contacts;
 };
 
 // Extract contacts from text
 const extractContacts = (text) => {
-  console.log('Raw PDF text:', text); // Debug log
+  // console.log('Raw PDF text:', text); // Debug log
   
   // Split text into lines and remove empty lines
   const lines = text.split('\n').filter(line => line.trim());
-  console.log('Lines:', lines); // Debug log
+  // console.log('Lines:', lines); // Debug log
   
   // Skip the header lines
   const dataLines = lines.slice(3); // Skip SR NO, GSTIN line, and OFFICER NAME line
-  console.log('Data lines:', dataLines); // Debug log
+  // console.log('Data lines:', dataLines); // Debug log
   
   const contacts = [];
   let currentName = 'Unknown';
@@ -165,7 +165,7 @@ const extractContacts = (text) => {
     const line = dataLines[i].trim();
     if (!line || /^\d+$/.test(line)) continue; // Skip empty lines and lines that are just numbers
     
-    console.log('Processing line:', line); // Debug log
+    // console.log('Processing line:', line); // Debug log
     
     // Try to find GSTIN first as it's the most reliable identifier
     const gstinMatch = line.match(/([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})/);
@@ -258,7 +258,7 @@ const extractContacts = (text) => {
     });
   }
   
-  console.log('Extracted contacts:', contacts); // Debug log
+  // console.log('Extracted contacts:', contacts); // Debug log
   return contacts;
 };
 
@@ -379,6 +379,39 @@ app.delete('/api/contacts/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+
+
+// Create a new contact manually
+app.post('/api/contacts', async (req, res) => {
+  try {
+    const { name, phoneNumber, gstin } = req.body;
+    
+    // Check required fields
+    if (!name || !phoneNumber) {
+      return res.status(400).json({ success: false, error: 'Name and phone number are required' });
+    }
+    
+    // Check for duplicate contact by phone number
+    const existingContact = await Contact.findOne({ phoneNumber });
+    if (existingContact) {
+      return res.status(400).json({ success: false, error: 'Contact with this phone number already exists' });
+    }
+    
+    // Create new contact with status "pending" (i.e. not called)
+    const newContact = await Contact.create({
+      name,
+      phoneNumber,
+      gstin: gstin || '',
+      called: false,
+      callDate: null
+    });
+    
+    res.json({ success: true, contact: newContact });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
