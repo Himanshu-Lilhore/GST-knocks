@@ -231,9 +231,12 @@ function App() {
         </div>
 
         {/* Add Contact Form */}
-        {showAddContact && (
+        <div
+          className={`overflow-hidden transition-all duration-400 ease-in-out ${showAddContact ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}
+        >
           <div className="bg-white rounded-lg shadow p-6 mb-6">
             <form onSubmit={handleAddContact}>
+              {/* Form fields */}
               <div className="mb-4">
                 <label className="block text-gray-700 mb-2" htmlFor="name">
                   Name<span className="text-red-500">*</span>
@@ -282,7 +285,7 @@ function App() {
               </div>
             </form>
           </div>
-        )}
+        </div>
 
         {/* Search bar */}
         <div className="relative mb-6" ref={searchRef}>
@@ -382,9 +385,9 @@ function App() {
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     {contact.called ? (
-                      <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                      <CheckCircleIcon className="flex-shrink-0 h-5 w-5 text-green-500" />
                     ) : (
-                      <ClockIcon className="h-5 w-5 text-yellow-500" />
+                      <ClockIcon className="flex-shrink-0 h-5 w-5 text-yellow-500" />
                     )}
                     <div className="select-text">
                       <span className="font-medium block text-lg">{contact.name}</span>
