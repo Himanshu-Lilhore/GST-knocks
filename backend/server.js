@@ -45,61 +45,79 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
 
-// Extract phone numbers from text
-const extractPhoneNumbers = (text) => {
-  // Indian phone number regex pattern
-  // Matches:
-  // - 10 digits starting with 6-9 (mobile)
-  // - 10 digits starting with 2-5 (landline)
-  // - Optional country code +91
-  // - Optional spaces, hyphens, or parentheses
-  const phoneRegex = /(?:(?:\+91|91|0)?[-. ]?)?(?:(?:(?:6|7|8|9)\d{9})|(?:(?:2|3|4|5)\d{9}))(?:\s*[-. ]?\d{4})?/g;
+// Extract contacts from text
+const extractContacts = (text) => {
+  // Split text into lines and remove empty lines
+  const lines = text.split('\n').filter(line => line.trim());
   
-  const matches = text.match(phoneRegex) || [];
+  // Skip the header line
+  const dataLines = lines.slice(1);
   
-  // Clean and validate the numbers
-  return [...new Set(matches.map(number => {
-    // Remove all non-digit characters
-    const cleaned = number.replace(/\D/g, '');
+  const contacts = [];
+  
+  dataLines.forEach(line => {
+    // Split the line by whitespace
+    const parts = line.trim().split(/\s+/);
     
-    // Ensure it's a valid length (10 digits)
-    if (cleaned.length === 10) {
-      return cleaned;
-    }
-    // If it has country code, ensure it's 12 digits
-    if (cleaned.length === 12 && cleaned.startsWith('91')) {
-      return cleaned;
-    }
-    return null;
-  }).filter(Boolean))];
+    // Find the phone number (last 10 digits in the line)
+    const phoneMatch = line.match(/\d{10}/);
+    if (!phoneMatch) return;
+    
+    const phoneNumber = phoneMatch[0];
+    
+    // Find the trade name (starts after GSTIN and before the officer name)
+    const gstinIndex = parts.findIndex(part => /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(part));
+    const officerIndex = parts.findIndex(part => part.includes('JI'));
+    
+    if (gstinIndex === -1 || officerIndex === -1) return;
+    
+    // Get the trade name (everything between GSTIN and officer name)
+    const tradeName = parts.slice(gstinIndex + 1, officerIndex).join(' ');
+    
+    // Clean up the trade name
+    const cleanName = tradeName
+      .replace(/^M\/S\.?\s*/i, '') // Remove M/S. or M/S
+      .replace(/^M\/S\s*/i, '')    // Remove M/S
+      .replace(/\s+IGST\s+STLMT/i, '') // Remove IGST STLMT
+      .replace(/\s+CTI/i, '')      // Remove CTI
+      .replace(/\s+STO/i, '')      // Remove STO
+      .trim();
+    
+    contacts.push({
+      name: cleanName || 'Unknown',
+      phoneNumber: phoneNumber
+    });
+  });
+  
+  return contacts;
 };
 
-// Upload PDF and extract numbers
+// Upload PDF and extract contacts
 app.post('/api/upload', upload.single('pdf'), async (req, res) => {
   try {
     const pdfData = await pdf(req.file.buffer);
-    const phoneNumbers = extractPhoneNumbers(pdfData.text);
+    const contacts = extractContacts(pdfData.text);
 
     // Save to database
-    const savedNumbers = await Promise.all(
-      phoneNumbers.map(async (number) => {
+    const savedContacts = await Promise.all(
+      contacts.map(async (contact) => {
         try {
           return await Contact.findOneAndUpdate(
-            { phoneNumber: number },
+            { phoneNumber: contact.phoneNumber },
             { 
-              phoneNumber: number,
-              name: 'Unknown' // Default name for now
+              phoneNumber: contact.phoneNumber,
+              name: contact.name
             },
             { upsert: true, new: true }
           );
         } catch (error) {
-          console.error(`Error saving number ${number}:`, error);
+          console.error(`Error saving contact ${contact.phoneNumber}:`, error);
           return null;
         }
       })
     );
 
-    res.json({ success: true, contacts: savedNumbers.filter(n => n) });
+    res.json({ success: true, contacts: savedContacts.filter(n => n) });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }

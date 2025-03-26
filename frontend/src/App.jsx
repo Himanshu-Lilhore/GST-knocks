@@ -330,24 +330,19 @@ function App() {
                   }`}
                 >
                   <div className="mt-4 pt-4 border-t border-gray-100">
-                    <div className="flex justify-between items-center">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(contact._id);
-                        }}
-                        className="flex items-center px-3 py-2 rounded-lg border-2 border-red-500/60 text-red-600 hover:bg-red-500 hover:text-white transition-colors select-none"
-                      >
-                        <TrashIcon className="h-5 w-5 mr-2" />
-                        Delete
-                      </button>
-                      
-                      <div className="flex items-center gap-4">
-                        {contact.called && contact.callDate && (
-                          <div className="text-sm text-gray-500 select-none">
-                            Contacted on: {formatDate(contact.callDate)}
-                          </div>
-                        )}
+                    <div className="flex flex-col gap-4">
+                      <div className="flex justify-between items-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(contact._id);
+                          }}
+                          className="flex items-center px-3 py-2 rounded-lg border-2 border-red-500/60 text-red-600 hover:bg-red-500 hover:text-white transition-colors select-none"
+                        >
+                          <TrashIcon className="h-5 w-5 mr-2" />
+                          Delete
+                        </button>
+                        
                         {!contact.called ? (
                           <button
                             onClick={(e) => {
@@ -371,6 +366,12 @@ function App() {
                           </button>
                         )}
                       </div>
+                      
+                      {contact.called && contact.callDate && (
+                        <div className="text-sm text-gray-500 select-none">
+                          Contacted on: {formatDate(contact.callDate)}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

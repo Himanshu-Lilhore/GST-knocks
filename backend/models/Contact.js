@@ -16,9 +16,10 @@ const contactSchema = new mongoose.Schema({
     default: false
   },
   callDate: {
-    type: Date,
-    default: null
+    type: Date
   }
-}, { timestamps: true });
+}, {
+  timestamps: true
+});
 
 module.exports = mongoose.model('Contact', contactSchema); 
