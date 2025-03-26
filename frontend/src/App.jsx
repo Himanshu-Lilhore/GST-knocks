@@ -3,6 +3,8 @@ import axios from 'axios';
 import { Toaster, toast } from 'react-hot-toast';
 import { PhoneIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
+
 function App() {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -13,7 +15,7 @@ function App() {
 
   const fetchContacts = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/contacts');
+      const response = await axios.get(`${BACKEND_URL}/api/contacts`);
       setContacts(response.data);
     } catch (error) {
       toast.error('Failed to fetch contacts');
@@ -29,7 +31,7 @@ function App() {
     setLoading(true);
 
     try {
-      await axios.post('http://localhost:5000/api/upload', formData);
+      await axios.post(`${BACKEND_URL}/api/upload`, formData);
       toast.success('PDF processed successfully');
       fetchContacts();
     } catch (error) {
@@ -41,7 +43,7 @@ function App() {
 
   const handleCall = async (contact) => {
     try {
-      await axios.put(`http://localhost:5000/api/contacts/${contact._id}`);
+      await axios.put(`${BACKEND_URL}/api/contacts/${contact._id}`);
       window.location.href = `tel:${contact.phoneNumber}`;
       fetchContacts();
     } catch (error) {

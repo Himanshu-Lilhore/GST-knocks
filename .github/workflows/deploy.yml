@@ -16,12 +16,22 @@ jobs:
 
       - name: Setup Node
         uses: actions/setup-node@v3
+        with:
+          node-version: 18
 
       - name: Install dependencies
-        uses: bahmutov/npm-install@v1
+        run: |
+          cd frontend
+          npm install
+
+      - name: Inject environment variable
+        run: |
+          echo "VITE_BACKEND_URL=${{ secrets.VITE_BACKEND_URL }}" > frontend/.env
 
       - name: Build project
-        run: npm run build
+        run: |
+          cd frontend
+          npm run build
 
       - name: Upload production-ready build files
         uses: actions/upload-artifact@v3

@@ -7,7 +7,11 @@ const Contact = require('./models/Contact');
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: process.env.FRONTEND_URL,
+  methods: ['GET', 'POST', 'PUT'],
+  credentials: true
+}));
 app.use(express.json());
 
 // Multer configuration for PDF uploads
@@ -85,5 +89,5 @@ app.put('/api/contacts/:id', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
