@@ -8,7 +8,21 @@ require('dotenv').config();
 
 const app = express();
 app.use(cors({
-  origin: process.env.FRONTEND_URL,
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      'https://himanshu-lilhore.github.io',
+      process.env.FRONTEND_URL
+    ];
+
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'PUT'],
   credentials: true
 }));
@@ -42,7 +56,7 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
   try {
     const pdfData = await pdf(req.file.buffer);
     const phoneNumbers = extractPhoneNumbers(pdfData.text);
-    
+
     // Save to database
     const savedNumbers = await Promise.all(
       phoneNumbers.map(async (number) => {
