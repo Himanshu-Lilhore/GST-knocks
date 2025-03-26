@@ -86,7 +86,10 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
         try {
           return await Contact.findOneAndUpdate(
             { phoneNumber: number },
-            { phoneNumber: number },
+            { 
+              phoneNumber: number,
+              name: 'Unknown' // Default name for now
+            },
             { upsert: true, new: true }
           );
         } catch (error) {

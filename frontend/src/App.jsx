@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Toaster, toast } from 'react-hot-toast';
-import { PhoneIcon, CheckCircleIcon, TrashIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
+import { PhoneIcon, CheckCircleIcon, TrashIcon, ChevronDownIcon, ClockIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
@@ -10,6 +10,12 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [expandedCards, setExpandedCards] = useState(new Set());
   const [filter, setFilter] = useState('all'); // 'all', 'pending', 'done'
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const searchRef = useRef(null);
+  const [selectedContactId, setSelectedContactId] = useState(null);
+  const [highlightedContactId, setHighlightedContactId] = useState(null);
+  const contactRefs = useRef({});
 
   useEffect(() => {
     fetchContacts();
@@ -93,11 +99,23 @@ function App() {
   };
 
   const filteredContacts = contacts.filter(contact => {
-    if (filter === 'all') return true;
-    if (filter === 'pending') return !contact.called;
-    if (filter === 'done') return contact.called;
-    return true;
+    const matchesFilter = filter === 'all' ? true :
+      filter === 'pending' ? !contact.called :
+      filter === 'done' ? contact.called : true;
+
+    const matchesSearch = searchQuery === '' ? true :
+      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      contact.phoneNumber.includes(searchQuery);
+
+    return matchesFilter && matchesSearch;
   });
+
+  const suggestions = contacts.filter(contact => 
+    searchQuery !== '' && (
+      contact.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      contact.phoneNumber.includes(searchQuery)
+    )
+  ).slice(0, 5); // Limit to 5 suggestions
 
   // Add counts for each category
   const counts = {
@@ -114,6 +132,37 @@ function App() {
       toast.error('Failed to update status');
     }
   };
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Add scroll effect when selectedContactId changes
+  useEffect(() => {
+    if (selectedContactId && contactRefs.current[selectedContactId]) {
+      contactRefs.current[selectedContactId].scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'center'
+      });
+      setHighlightedContactId(selectedContactId);
+      setSelectedContactId(null); // Reset after scrolling
+      
+      // Remove highlight after 2 seconds
+      const timer = setTimeout(() => {
+        setHighlightedContactId(null);
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [selectedContactId]);
 
   return (
     <div className="min-h-screen bg-gray-100 p-4">
@@ -134,6 +183,46 @@ function App() {
               file:bg-blue-50 file:text-blue-700
               hover:file:bg-blue-100"
           />
+        </div>
+
+        {/* Search bar */}
+        <div className="relative mb-6" ref={searchRef}>
+          <div className="relative">
+            <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search by name or number..."
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowSuggestions(true);
+              }}
+              className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          
+          {/* Suggestions dropdown */}
+          {showSuggestions && suggestions.length > 0 && (
+            <div className="absolute z-20 w-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 max-h-60 overflow-y-auto">
+              {suggestions.map((contact, index) => (
+                <div
+                  key={contact._id}
+                  className={`px-4 py-2 hover:bg-gray-50 cursor-pointer ${
+                    index !== suggestions.length - 1 ? 'border-b border-gray-100' : ''
+                  }`}
+                  onClick={() => {
+                    setSearchQuery(contact.name);
+                    setShowSuggestions(false);
+                    setFilter('all');
+                    setSelectedContactId(contact._id);
+                  }}
+                >
+                  <div className="font-medium">{contact.name}</div>
+                  <div className="text-sm text-gray-500">{contact.phoneNumber}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Bean-shaped sorter */}
@@ -188,18 +277,25 @@ function App() {
             {filteredContacts.map((contact, index) => (
               <div
                 key={contact._id}
-                className="bg-white rounded-lg shadow p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                ref={el => contactRefs.current[contact._id] = el}
+                className={`bg-white rounded-lg shadow p-4 cursor-pointer hover:bg-gray-50 transition-all duration-300 select-none ${
+                  highlightedContactId === contact._id 
+                    ? 'ring-2 ring-blue-500 bg-blue-50' 
+                    : ''
+                }`}
                 onClick={() => toggleCard(contact._id)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
-                    {contact.called && (
+                    {contact.called ? (
                       <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                    ) : (
+                      <ClockIcon className="h-5 w-5 text-yellow-500" />
                     )}
-                    <div>
-                      <span className="font-medium block">{contact.phoneNumber}</span>
-                      <span className={`text-sm ${contact.called ? 'text-gray-500' : 'text-yellow-600'}`}>
-                        {getContactStatus(contact)}
+                    <div className="select-text">
+                      <span className="font-medium block text-lg">{contact.name}</span>
+                      <span className="text-sm text-gray-500">
+                        {contact.phoneNumber}
                       </span>
                     </div>
                   </div>
@@ -210,10 +306,10 @@ function App() {
                         e.stopPropagation();
                         handleCall(contact);
                       }}
-                      className={`flex items-center px-4 py-2 rounded-lg ${
+                      className={`flex items-center px-4 py-2 rounded-lg select-none ${
                         contact.called
-                          ? 'bg-gray-100 text-gray-600'
-                          : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                          ? 'bg-gray-100 hover:bg-gray-200 text-gray-600'
+                          : 'bg-yellow-400/80 text-black hover:bg-yellow-500'
                       }`}
                     >
                       <PhoneIcon className="h-5 w-5 mr-2" />
@@ -221,7 +317,7 @@ function App() {
                     </button>
                     
                     <ChevronDownIcon 
-                      className={`h-5 w-5 text-gray-500 transition-transform duration-200 ${
+                      className={`h-5 w-5 text-gray-500 transition-transform duration-200 select-none ${
                         expandedCards.has(contact._id) ? 'rotate-180' : ''
                       }`}
                     />
@@ -240,7 +336,7 @@ function App() {
                           e.stopPropagation();
                           handleDelete(contact._id);
                         }}
-                        className="flex items-center px-3 py-2 rounded-lg border-2 border-red-500/60 text-red-600 hover:bg-red-500 hover:text-white transition-colors"
+                        className="flex items-center px-3 py-2 rounded-lg border-2 border-red-500/60 text-red-600 hover:bg-red-500 hover:text-white transition-colors select-none"
                       >
                         <TrashIcon className="h-5 w-5 mr-2" />
                         Delete
@@ -248,7 +344,7 @@ function App() {
                       
                       <div className="flex items-center gap-4">
                         {contact.called && contact.callDate && (
-                          <div className="text-sm text-gray-500">
+                          <div className="text-sm text-gray-500 select-none">
                             Contacted on: {formatDate(contact.callDate)}
                           </div>
                         )}
@@ -258,7 +354,7 @@ function App() {
                               e.stopPropagation();
                               handleStatusChange(contact, 'done');
                             }}
-                            className="flex items-center px-3 py-2 rounded-lg border-2 border-green-500/60 text-green-600 hover:bg-green-500 hover:text-white transition-colors"
+                            className="flex items-center px-3 py-2 rounded-lg border-2 border-green-500/60 text-green-600 hover:bg-green-500 hover:text-white transition-colors select-none"
                           >
                             <CheckCircleIcon className="h-5 w-5 mr-2" />
                             Mark as Done
@@ -269,7 +365,7 @@ function App() {
                               e.stopPropagation();
                               handleStatusChange(contact, 'pending');
                             }}
-                            className="flex items-center px-3 py-2 rounded-lg border-2 border-yellow-500/60 text-yellow-600 hover:bg-yellow-500 hover:text-white transition-colors"
+                            className="flex items-center px-3 py-2 rounded-lg border-2 border-yellow-500/60 text-yellow-600 hover:bg-yellow-500 hover:text-white transition-colors select-none"
                           >
                             Mark as Pending
                           </button>

@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const contactSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    default: 'Unknown'
+  },
   phoneNumber: {
     type: String,
     required: true,
