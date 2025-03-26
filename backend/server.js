@@ -23,7 +23,7 @@ app.use(cors({
       return callback(new Error('Not allowed by CORS'));
     }
   },
-  methods: ['GET', 'POST', 'PUT'],
+  // methods: ['GET', 'POST', 'PUT'],
   credentials: true
 }));
 app.use(express.json());
@@ -47,8 +47,31 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // Extract phone numbers from text
 const extractPhoneNumbers = (text) => {
-  const phoneRegex = /(\+?\d{1,4}[-.\s]?\(?\d{1,3}\)?[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9})/g;
-  return [...new Set(text.match(phoneRegex) || [])];
+  // Indian phone number regex pattern
+  // Matches:
+  // - 10 digits starting with 6-9 (mobile)
+  // - 10 digits starting with 2-5 (landline)
+  // - Optional country code +91
+  // - Optional spaces, hyphens, or parentheses
+  const phoneRegex = /(?:(?:\+91|91|0)?[-. ]?)?(?:(?:(?:6|7|8|9)\d{9})|(?:(?:2|3|4|5)\d{9}))(?:\s*[-. ]?\d{4})?/g;
+  
+  const matches = text.match(phoneRegex) || [];
+  
+  // Clean and validate the numbers
+  return [...new Set(matches.map(number => {
+    // Remove all non-digit characters
+    const cleaned = number.replace(/\D/g, '');
+    
+    // Ensure it's a valid length (10 digits)
+    if (cleaned.length === 10) {
+      return cleaned;
+    }
+    // If it has country code, ensure it's 12 digits
+    if (cleaned.length === 12 && cleaned.startsWith('91')) {
+      return cleaned;
+    }
+    return null;
+  }).filter(Boolean))];
 };
 
 // Upload PDF and extract numbers
@@ -82,7 +105,11 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
 // Get all contacts
 app.get('/api/contacts', async (req, res) => {
   try {
-    const contacts = await Contact.find().sort({ called: 1, createdAt: 1 });
+    const contacts = await Contact.find().sort({ 
+      called: 1,  // Uncalled contacts first
+      callDate: -1,  // Most recently called first within called contacts
+      createdAt: 1  // For uncalled contacts, oldest first
+    });
     res.json(contacts);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -92,12 +119,27 @@ app.get('/api/contacts', async (req, res) => {
 // Update contact status
 app.put('/api/contacts/:id', async (req, res) => {
   try {
+    const { status } = req.body;
+    const update = status === 'pending' 
+      ? { called: false, callDate: null }
+      : { called: true, callDate: new Date() };
+    
     const contact = await Contact.findByIdAndUpdate(
       req.params.id,
-      { called: true, callDate: new Date() },
+      update,
       { new: true }
     );
     res.json(contact);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete contact
+app.delete('/api/contacts/:id', async (req, res) => {
+  try {
+    await Contact.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

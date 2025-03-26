@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Toaster, toast } from 'react-hot-toast';
-import { PhoneIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
+import { PhoneIcon, CheckCircleIcon, TrashIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
 function App() {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [expandedCards, setExpandedCards] = useState(new Set());
+  const [filter, setFilter] = useState('all'); // 'all', 'pending', 'done'
 
   useEffect(() => {
     fetchContacts();
@@ -51,6 +53,68 @@ function App() {
     }
   };
 
+  const handleDelete = async (contactId) => {
+    try {
+      await axios.delete(`${BACKEND_URL}/api/contacts/${contactId}`);
+      toast.success('Contact deleted successfully');
+      fetchContacts();
+    } catch (error) {
+      toast.error('Failed to delete contact');
+    }
+  };
+
+  const formatDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const toggleCard = (contactId) => {
+    setExpandedCards(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(contactId)) {
+        newSet.delete(contactId);
+      } else {
+        newSet.add(contactId);
+      }
+      return newSet;
+    });
+  };
+
+  const getContactStatus = (contact) => {
+    if (!contact.called) return 'Pending';
+    return 'Done';
+  };
+
+  const filteredContacts = contacts.filter(contact => {
+    if (filter === 'all') return true;
+    if (filter === 'pending') return !contact.called;
+    if (filter === 'done') return contact.called;
+    return true;
+  });
+
+  // Add counts for each category
+  const counts = {
+    all: contacts.length,
+    pending: contacts.filter(c => !c.called).length,
+    done: contacts.filter(c => c.called).length
+  };
+
+  const handleStatusChange = async (contact, newStatus) => {
+    try {
+      await axios.put(`${BACKEND_URL}/api/contacts/${contact._id}`, { status: newStatus });
+      fetchContacts();
+    } catch (error) {
+      toast.error('Failed to update status');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 p-4">
       <Toaster position="top-right" />
@@ -72,33 +136,148 @@ function App() {
           />
         </div>
 
+        {/* Bean-shaped sorter */}
+        <div className="sticky top-0 z-10 bg-white rounded-full shadow-md p-1 mb-6 w-full">
+          <div className="flex bg-gray-100 rounded-full p-1 w-full">
+            <button
+              onClick={() => setFilter('all')}
+              className={`flex-1 px-6 py-2 rounded-full text-sm font-medium transition-all relative border-2 ${
+                filter === 'all'
+                  ? 'bg-white text-blue-600 shadow-md border-blue-200'
+                  : 'text-gray-600 hover:text-gray-900 border-transparent'
+              }`}
+            >
+              All
+              <span className="absolute -top-1 -right-1 bg-blue-100 text-blue-600 text-xs font-semibold px-2 py-0.5 rounded-full">
+                {counts.all}
+              </span>
+            </button>
+            <button
+              onClick={() => setFilter('pending')}
+              className={`flex-1 px-6 py-2 rounded-full text-sm font-medium transition-all relative border-2 ${
+                filter === 'pending'
+                  ? 'bg-white text-yellow-600 shadow-md border-yellow-200'
+                  : 'text-gray-600 hover:text-gray-900 border-transparent'
+              }`}
+            >
+              Pending
+              <span className="absolute -top-1 -right-1 bg-yellow-100 text-yellow-600 text-xs font-semibold px-2 py-0.5 rounded-full">
+                {counts.pending}
+              </span>
+            </button>
+            <button
+              onClick={() => setFilter('done')}
+              className={`flex-1 px-6 py-2 rounded-full text-sm font-medium transition-all relative border-2 ${
+                filter === 'done'
+                  ? 'bg-white text-green-600 shadow-md border-green-200'
+                  : 'text-gray-600 hover:text-gray-900 border-transparent'
+              }`}
+            >
+              Done
+              <span className="absolute -top-1 -right-1 bg-green-100 text-green-600 text-xs font-semibold px-2 py-0.5 rounded-full">
+                {counts.done}
+              </span>
+            </button>
+          </div>
+        </div>
+
         {loading ? (
           <div className="text-center">Processing PDF...</div>
         ) : (
           <div className="grid gap-4">
-            {contacts.map((contact) => (
+            {filteredContacts.map((contact, index) => (
               <div
                 key={contact._id}
-                className="bg-white rounded-lg shadow p-4 flex items-center justify-between"
+                className="bg-white rounded-lg shadow p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => toggleCard(contact._id)}
               >
-                <div className="flex items-center">
-                  {contact.called && (
-                    <CheckCircleIcon className="h-5 w-5 text-green-500 mr-2" />
-                  )}
-                  <span className="font-medium">{contact.phoneNumber}</span>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    {contact.called && (
+                      <CheckCircleIcon className="h-5 w-5 text-green-500" />
+                    )}
+                    <div>
+                      <span className="font-medium block">{contact.phoneNumber}</span>
+                      <span className={`text-sm ${contact.called ? 'text-gray-500' : 'text-yellow-600'}`}>
+                        {getContactStatus(contact)}
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCall(contact);
+                      }}
+                      className={`flex items-center px-4 py-2 rounded-lg ${
+                        contact.called
+                          ? 'bg-gray-100 text-gray-600'
+                          : 'bg-yellow-500 text-white hover:bg-yellow-600'
+                      }`}
+                    >
+                      <PhoneIcon className="h-5 w-5 mr-2" />
+                      Call
+                    </button>
+                    
+                    <ChevronDownIcon 
+                      className={`h-5 w-5 text-gray-500 transition-transform duration-200 ${
+                        expandedCards.has(contact._id) ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </div>
                 </div>
                 
-                <button
-                  onClick={() => handleCall(contact)}
-                  className={`flex items-center px-4 py-2 rounded-lg ${
-                    contact.called
-                      ? 'bg-gray-100 text-gray-600'
-                      : 'bg-blue-500 text-white hover:bg-blue-600'
+                <div 
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${
+                    expandedCards.has(contact._id) ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
                   }`}
                 >
-                  <PhoneIcon className="h-5 w-5 mr-2" />
-                  Call
-                </button>
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    <div className="flex justify-between items-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(contact._id);
+                        }}
+                        className="flex items-center px-3 py-2 rounded-lg border-2 border-red-500/60 text-red-600 hover:bg-red-500 hover:text-white transition-colors"
+                      >
+                        <TrashIcon className="h-5 w-5 mr-2" />
+                        Delete
+                      </button>
+                      
+                      <div className="flex items-center gap-4">
+                        {contact.called && contact.callDate && (
+                          <div className="text-sm text-gray-500">
+                            Contacted on: {formatDate(contact.callDate)}
+                          </div>
+                        )}
+                        {!contact.called ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStatusChange(contact, 'done');
+                            }}
+                            className="flex items-center px-3 py-2 rounded-lg border-2 border-green-500/60 text-green-600 hover:bg-green-500 hover:text-white transition-colors"
+                          >
+                            <CheckCircleIcon className="h-5 w-5 mr-2" />
+                            Mark as Done
+                          </button>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStatusChange(contact, 'pending');
+                            }}
+                            className="flex items-center px-3 py-2 rounded-lg border-2 border-yellow-500/60 text-yellow-600 hover:bg-yellow-500 hover:text-white transition-colors"
+                          >
+                            Mark as Pending
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
