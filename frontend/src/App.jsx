@@ -35,7 +35,7 @@ function App() {
     if (!file) return;
 
     const formData = new FormData();
-    formData.append('pdf', file);
+    formData.append('file', file);
     setLoading(true);
 
     try {
@@ -174,7 +174,7 @@ function App() {
         <div className="bg-white rounded-lg shadow p-6 mb-6">
           <input
             type="file"
-            accept=".pdf"
+            accept=".pdf,.xlsx,.xls"
             onChange={handleFileUpload}
             className="block w-full text-sm text-gray-500
               file:mr-4 file:py-2 file:px-4

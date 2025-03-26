@@ -2,6 +2,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const multer = require('multer');
 const pdf = require('pdf-parse');
+const xlsx = require('xlsx');
 const cors = require('cors');
 const Contact = require('./models/Contact');
 require('dotenv').config();
@@ -28,14 +29,16 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Multer configuration for PDF uploads
+// Multer configuration for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf') {
+    if (file.mimetype === 'application/pdf' || 
+        file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+        file.mimetype === 'application/vnd.ms-excel') {
       cb(null, true);
     } else {
-      cb(new Error('Only PDF files are allowed!'), false);
+      cb(new Error('Only PDF and Excel files are allowed!'), false);
     }
   }
 });
@@ -44,6 +47,46 @@ const upload = multer({
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('Connected to MongoDB'))
   .catch(err => console.error('MongoDB connection error:', err));
+
+// Extract contacts from Excel
+const extractContactsFromExcel = (buffer) => {
+  const workbook = xlsx.read(buffer);
+  const firstSheetName = workbook.SheetNames[0];
+  const worksheet = workbook.Sheets[firstSheetName];
+  
+  // Convert sheet to JSON
+  const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+  console.log('Excel rows:', rows); // Debug log
+  
+  const contacts = [];
+  
+  // Skip header row
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length < 7) continue; // Skip empty or invalid rows
+    
+    // Excel columns: SR NO, GSTIN, TRADE NAME, RETURN STATUS, empty, OFFICER NAME, MobileNo
+    const name = row[2]?.toString().trim() || '';
+    const phoneNumber = row[6]?.toString().trim() || '';
+    
+    // Validate phone number (10 digits)
+    if (name && phoneNumber && /^\d{10}$/.test(phoneNumber)) {
+      contacts.push({
+        name: name
+          .replace(/^M\/S\.?\s*/i, '')
+          .replace(/^M\/S\s*/i, '')
+          .replace(/\s+IGST\s+STLMT/i, '')
+          .replace(/\s+CTI/i, '')
+          .replace(/\s+STO/i, '')
+          .trim(),
+        phoneNumber: phoneNumber
+      });
+    }
+  }
+  
+  console.log('Extracted contacts from Excel:', contacts); // Debug log
+  return contacts;
+};
 
 // Extract contacts from text
 const extractContacts = (text) => {
@@ -60,6 +103,8 @@ const extractContacts = (text) => {
   const contacts = [];
   let currentName = '';
   let currentPhoneNumber = '';
+  let isCollectingName = false;
+  let lookingForNumber = false;
   
   dataLines.forEach((line, index) => {
     // Skip empty lines and lines that are just numbers (SR NO)
@@ -84,6 +129,8 @@ const extractContacts = (text) => {
         });
         currentName = '';
         currentPhoneNumber = '';
+        isCollectingName = false;
+        lookingForNumber = false;
       }
     } else {
       // This line might contain a name
@@ -91,6 +138,23 @@ const extractContacts = (text) => {
       const hasGSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}/.test(line);
       
       if (hasGSTIN) {
+        // If we were looking for a number for the previous entry, check next few lines
+        if (lookingForNumber && currentName) {
+          for (let i = 1; i <= 3; i++) {
+            if (index + i < dataLines.length) {
+              const nextLine = dataLines[index + i];
+              const nextPhoneMatch = nextLine.match(/\d{10}/);
+              if (nextPhoneMatch) {
+                contacts.push({
+                  name: currentName,
+                  phoneNumber: nextPhoneMatch[0]
+                });
+                break;
+              }
+            }
+          }
+        }
+        
         // Extract name after GSTIN
         const nameMatch = line.match(/[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}(.*?)(?:IGST STLMT|$)/);
         if (nameMatch) {
@@ -102,54 +166,92 @@ const extractContacts = (text) => {
             .replace(/\s+STO/i, '')      // Remove STO
             .trim();
           console.log('Found name from GSTIN line:', currentName); // Debug log
+          isCollectingName = true;
+          lookingForNumber = true;
         }
-      } else if (!line.includes('JI')) {
-        // If line doesn't contain 'JI' (officer name), it might be a continuation of the name
-        currentName = line
+      } else if (!line.includes('JI') && isCollectingName) {
+        // If we're collecting a name and this line doesn't contain 'JI', append it
+        const additionalName = line
           .replace(/^M\/S\.?\s*/i, '')
           .replace(/^M\/S\s*/i, '')
           .replace(/\s+IGST\s+STLMT/i, '')
           .replace(/\s+CTI/i, '')
           .replace(/\s+STO/i, '')
           .trim();
-        console.log('Found continuation name:', currentName); // Debug log
+        
+        if (additionalName) {
+          currentName = (currentName + ' ' + additionalName).trim();
+          console.log('Appended to name:', currentName); // Debug log
+        }
       }
     }
     
     // Check if the next line contains a phone number
     if (currentName && !currentPhoneNumber && index < dataLines.length - 1) {
-      const nextLine = dataLines[index + 1];
-      const nextPhoneMatch = nextLine.match(/\d{10}/);
-      if (nextPhoneMatch) {
-        currentPhoneNumber = nextPhoneMatch[0];
-        console.log('Found phone number on next line:', currentPhoneNumber); // Debug log
-        contacts.push({
-          name: currentName,
-          phoneNumber: currentPhoneNumber
-        });
-        currentName = '';
-        currentPhoneNumber = '';
+      // Look ahead up to 3 lines for a phone number
+      for (let i = 1; i <= 3; i++) {
+        if (index + i < dataLines.length) {
+          const nextLine = dataLines[index + i];
+          const nextPhoneMatch = nextLine.match(/\d{10}/);
+          if (nextPhoneMatch) {
+            currentPhoneNumber = nextPhoneMatch[0];
+            console.log('Found phone number in next lines:', currentPhoneNumber); // Debug log
+            contacts.push({
+              name: currentName,
+              phoneNumber: currentPhoneNumber
+            });
+            currentName = '';
+            currentPhoneNumber = '';
+            isCollectingName = false;
+            lookingForNumber = false;
+            break;
+          }
+        }
       }
     }
   });
+  
+  // Final check for any remaining entries
+  if (currentName && lookingForNumber) {
+    // Look at the last few lines for any remaining phone numbers
+    const lastLines = dataLines.slice(-5); // Look at the last 5 lines
+    for (const line of lastLines) {
+      const phoneMatch = line.match(/\d{10}/);
+      if (phoneMatch) {
+        console.log('Found final phone number:', phoneMatch[0]); // Debug log
+        contacts.push({
+          name: currentName,
+          phoneNumber: phoneMatch[0]
+        });
+        break;
+      }
+    }
+  }
   
   console.log('Extracted contacts:', contacts); // Debug log
   return contacts;
 };
 
-// Upload PDF and extract contacts
-app.post('/api/upload', upload.single('pdf'), async (req, res) => {
+// Upload file and extract contacts
+app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
-    const pdfData = await pdf(req.file.buffer);
-    console.log('PDF parsed successfully'); // Debug log
+    console.log('Processing file:', req.file.mimetype);
+    let contacts;
     
-    const contacts = extractContacts(pdfData.text);
-    console.log('Number of contacts extracted:', contacts.length); // Debug log
+    if (req.file.mimetype === 'application/pdf') {
+      const pdfData = await pdf(req.file.buffer);
+      contacts = extractContacts(pdfData.text);
+    } else {
+      // Excel file
+      contacts = extractContactsFromExcel(req.file.buffer);
+    }
+    
+    console.log('Number of contacts extracted:', contacts.length);
 
     if (contacts.length === 0) {
       return res.status(400).json({ 
         success: false, 
-        error: 'No contacts found in the PDF. Please check the format.' 
+        error: 'No contacts found in the file. Please check the format.' 
       });
     }
 
@@ -178,7 +280,7 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
       message: `Successfully processed ${savedContacts.filter(n => n).length} contacts`
     });
   } catch (error) {
-    console.error('PDF processing error:', error); // Debug log
+    console.error('File processing error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
