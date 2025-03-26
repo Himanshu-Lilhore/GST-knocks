@@ -47,48 +47,93 @@ mongoose.connect(process.env.MONGODB_URI)
 
 // Extract contacts from text
 const extractContacts = (text) => {
+  console.log('Raw PDF text:', text); // Debug log
+  
   // Split text into lines and remove empty lines
   const lines = text.split('\n').filter(line => line.trim());
+  console.log('Lines:', lines); // Debug log
   
-  // Skip the header line
-  const dataLines = lines.slice(1);
+  // Skip the header lines
+  const dataLines = lines.slice(3); // Skip SR NO, GSTIN line, and OFFICER NAME line
+  console.log('Data lines:', dataLines); // Debug log
   
   const contacts = [];
+  let currentName = '';
+  let currentPhoneNumber = '';
   
-  dataLines.forEach(line => {
-    // Split the line by whitespace
-    const parts = line.trim().split(/\s+/);
+  dataLines.forEach((line, index) => {
+    // Skip empty lines and lines that are just numbers (SR NO)
+    if (!line.trim() || /^\d+$/.test(line.trim())) {
+      return;
+    }
     
-    // Find the phone number (last 10 digits in the line)
+    console.log('Processing line:', line); // Debug log
+    
+    // Check if this line contains a phone number
     const phoneMatch = line.match(/\d{10}/);
-    if (!phoneMatch) return;
+    if (phoneMatch) {
+      currentPhoneNumber = phoneMatch[0];
+      console.log('Found phone number:', currentPhoneNumber); // Debug log
+      
+      // If we have a name, create the contact
+      if (currentName) {
+        console.log('Using previous name:', currentName); // Debug log
+        contacts.push({
+          name: currentName,
+          phoneNumber: currentPhoneNumber
+        });
+        currentName = '';
+        currentPhoneNumber = '';
+      }
+    } else {
+      // This line might contain a name
+      // Look for GSTIN pattern to identify the start of a new entry
+      const hasGSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}/.test(line);
+      
+      if (hasGSTIN) {
+        // Extract name after GSTIN
+        const nameMatch = line.match(/[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}(.*?)(?:IGST STLMT|$)/);
+        if (nameMatch) {
+          currentName = nameMatch[1]
+            .replace(/^M\/S\.?\s*/i, '') // Remove M/S. or M/S
+            .replace(/^M\/S\s*/i, '')    // Remove M/S
+            .replace(/\s+IGST\s+STLMT/i, '') // Remove IGST STLMT
+            .replace(/\s+CTI/i, '')      // Remove CTI
+            .replace(/\s+STO/i, '')      // Remove STO
+            .trim();
+          console.log('Found name from GSTIN line:', currentName); // Debug log
+        }
+      } else if (!line.includes('JI')) {
+        // If line doesn't contain 'JI' (officer name), it might be a continuation of the name
+        currentName = line
+          .replace(/^M\/S\.?\s*/i, '')
+          .replace(/^M\/S\s*/i, '')
+          .replace(/\s+IGST\s+STLMT/i, '')
+          .replace(/\s+CTI/i, '')
+          .replace(/\s+STO/i, '')
+          .trim();
+        console.log('Found continuation name:', currentName); // Debug log
+      }
+    }
     
-    const phoneNumber = phoneMatch[0];
-    
-    // Find the trade name (starts after GSTIN and before the officer name)
-    const gstinIndex = parts.findIndex(part => /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/.test(part));
-    const officerIndex = parts.findIndex(part => part.includes('JI'));
-    
-    if (gstinIndex === -1 || officerIndex === -1) return;
-    
-    // Get the trade name (everything between GSTIN and officer name)
-    const tradeName = parts.slice(gstinIndex + 1, officerIndex).join(' ');
-    
-    // Clean up the trade name
-    const cleanName = tradeName
-      .replace(/^M\/S\.?\s*/i, '') // Remove M/S. or M/S
-      .replace(/^M\/S\s*/i, '')    // Remove M/S
-      .replace(/\s+IGST\s+STLMT/i, '') // Remove IGST STLMT
-      .replace(/\s+CTI/i, '')      // Remove CTI
-      .replace(/\s+STO/i, '')      // Remove STO
-      .trim();
-    
-    contacts.push({
-      name: cleanName || 'Unknown',
-      phoneNumber: phoneNumber
-    });
+    // Check if the next line contains a phone number
+    if (currentName && !currentPhoneNumber && index < dataLines.length - 1) {
+      const nextLine = dataLines[index + 1];
+      const nextPhoneMatch = nextLine.match(/\d{10}/);
+      if (nextPhoneMatch) {
+        currentPhoneNumber = nextPhoneMatch[0];
+        console.log('Found phone number on next line:', currentPhoneNumber); // Debug log
+        contacts.push({
+          name: currentName,
+          phoneNumber: currentPhoneNumber
+        });
+        currentName = '';
+        currentPhoneNumber = '';
+      }
+    }
   });
   
+  console.log('Extracted contacts:', contacts); // Debug log
   return contacts;
 };
 
@@ -96,7 +141,17 @@ const extractContacts = (text) => {
 app.post('/api/upload', upload.single('pdf'), async (req, res) => {
   try {
     const pdfData = await pdf(req.file.buffer);
+    console.log('PDF parsed successfully'); // Debug log
+    
     const contacts = extractContacts(pdfData.text);
+    console.log('Number of contacts extracted:', contacts.length); // Debug log
+
+    if (contacts.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'No contacts found in the PDF. Please check the format.' 
+      });
+    }
 
     // Save to database
     const savedContacts = await Promise.all(
@@ -117,8 +172,13 @@ app.post('/api/upload', upload.single('pdf'), async (req, res) => {
       })
     );
 
-    res.json({ success: true, contacts: savedContacts.filter(n => n) });
+    res.json({ 
+      success: true, 
+      contacts: savedContacts.filter(n => n),
+      message: `Successfully processed ${savedContacts.filter(n => n).length} contacts`
+    });
   } catch (error) {
+    console.error('PDF processing error:', error); // Debug log
     res.status(500).json({ success: false, error: error.message });
   }
 });
