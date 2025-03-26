@@ -11,6 +11,10 @@ const contactSchema = new mongoose.Schema({
     required: true,
     unique: true
   },
+  gstin: {
+    type: String,
+    default: ''
+  },
   called: {
     type: Boolean,
     default: false

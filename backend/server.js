@@ -60,27 +60,82 @@ const extractContactsFromExcel = (buffer) => {
   
   const contacts = [];
   
+  // Find column indices from header row
+  const headerRow = rows[0] || [];
+  
+  // Find GSTIN column (usually contains business registration numbers)
+  const gstinColumnIndex = headerRow.findIndex(col => 
+    typeof col === 'string' && col.toUpperCase().includes('GSTIN')
+  );
+  
+  // Find name column - look for variations
+  const nameColumnIndex = headerRow.findIndex(col => 
+    typeof col === 'string' && (
+      col.toUpperCase().includes('TRADE NAME') ||
+      col.toUpperCase().includes('NAME') ||
+      col.toUpperCase().includes('BUSINESS')
+    )
+  );
+  
+  // Find phone column - look for variations
+  const phoneColumnIndex = headerRow.findIndex(col => 
+    typeof col === 'string' && (
+      col.toUpperCase().includes('MOBILE') ||
+      col.toUpperCase().includes('PHONE') ||
+      col.toUpperCase().includes('CONTACT')
+    )
+  );
+  
+  console.log('Column indices - GSTIN:', gstinColumnIndex, 'Name:', nameColumnIndex, 'Phone:', phoneColumnIndex);
+  
   // Skip header row
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
-    if (!row || row.length < 7) continue; // Skip empty or invalid rows
+    if (!row) continue; // Skip empty rows
     
-    // Excel columns: SR NO, GSTIN, TRADE NAME, RETURN STATUS, empty, OFFICER NAME, MobileNo
-    const name = row[2]?.toString().trim() || '';
-    const phoneNumber = row[6]?.toString().trim() || '';
+    let name = 'Unknown';
+    let phoneNumber = '';
+    let gstin = '';
     
-    // Validate phone number (10 digits)
-    if (name && phoneNumber && /^\d{10}$/.test(phoneNumber)) {
-      contacts.push({
-        name: name
+    // First try to get phone number - we'll look in all columns if needed
+    if (phoneColumnIndex !== -1) {
+      // Try the identified phone column first
+      phoneNumber = row[phoneColumnIndex]?.toString().trim() || '';
+    }
+    
+    // If phone number not found in the expected column, look through all columns
+    if (!phoneNumber || !/^\d{10}$/.test(phoneNumber)) {
+      for (let j = 0; j < row.length; j++) {
+        const cellValue = row[j]?.toString().trim() || '';
+        if (/^\d{10}$/.test(cellValue)) {
+          phoneNumber = cellValue;
+          break;
+        }
+      }
+    }
+    
+    // Try to get name from the name column if it exists
+    if (nameColumnIndex !== -1 && row[nameColumnIndex]) {
+      const nameValue = row[nameColumnIndex]?.toString().trim() || '';
+      if (nameValue) {
+        name = nameValue
           .replace(/^M\/S\.?\s*/i, '')
           .replace(/^M\/S\s*/i, '')
           .replace(/\s+IGST\s+STLMT/i, '')
           .replace(/\s+CTI/i, '')
           .replace(/\s+STO/i, '')
-          .trim(),
-        phoneNumber: phoneNumber
-      });
+          .trim();
+      }
+    }
+    
+    // Get GSTIN if available
+    if (gstinColumnIndex !== -1 && row[gstinColumnIndex]) {
+      gstin = row[gstinColumnIndex]?.toString().trim() || '';
+    }
+    
+    // If we have a valid phone number, add the contact (name will be "Unknown" if not found)
+    if (phoneNumber && /^\d{10}$/.test(phoneNumber)) {
+      contacts.push({ name, phoneNumber, gstin });
     }
   }
   
@@ -101,77 +156,38 @@ const extractContacts = (text) => {
   console.log('Data lines:', dataLines); // Debug log
   
   const contacts = [];
-  let currentName = '';
+  let currentName = 'Unknown';
   let currentPhoneNumber = '';
-  let isCollectingName = false;
-  let lookingForNumber = false;
+  let currentGSTIN = '';
   
-  dataLines.forEach((line, index) => {
-    // Skip empty lines and lines that are just numbers (SR NO)
-    if (!line.trim() || /^\d+$/.test(line.trim())) {
-      return;
-    }
+  // Process each line
+  for (let i = 0; i < dataLines.length; i++) {
+    const line = dataLines[i].trim();
+    if (!line || /^\d+$/.test(line)) continue; // Skip empty lines and lines that are just numbers
     
     console.log('Processing line:', line); // Debug log
     
-    // Check if this line contains a phone number
-    const phoneMatch = line.match(/\d{10}/);
-    if (phoneMatch) {
-      currentPhoneNumber = phoneMatch[0];
-      console.log('Found phone number:', currentPhoneNumber); // Debug log
-      
-      // If we have a name, create the contact
-      if (currentName) {
-        console.log('Using previous name:', currentName); // Debug log
+    // Try to find GSTIN first as it's the most reliable identifier
+    const gstinMatch = line.match(/([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})/);
+    if (gstinMatch) {
+      // If we have a complete contact from previous iteration, save it
+      if (currentPhoneNumber && /^\d{10}$/.test(currentPhoneNumber)) {
         contacts.push({
           name: currentName,
-          phoneNumber: currentPhoneNumber
+          phoneNumber: currentPhoneNumber,
+          gstin: currentGSTIN || ''
         });
-        currentName = '';
-        currentPhoneNumber = '';
-        isCollectingName = false;
-        lookingForNumber = false;
       }
-    } else {
-      // This line might contain a name
-      // Look for GSTIN pattern to identify the start of a new entry
-      const hasGSTIN = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}/.test(line);
       
-      if (hasGSTIN) {
-        // If we were looking for a number for the previous entry, check next few lines
-        if (lookingForNumber && currentName) {
-          for (let i = 1; i <= 3; i++) {
-            if (index + i < dataLines.length) {
-              const nextLine = dataLines[index + i];
-              const nextPhoneMatch = nextLine.match(/\d{10}/);
-              if (nextPhoneMatch) {
-                contacts.push({
-                  name: currentName,
-                  phoneNumber: nextPhoneMatch[0]
-                });
-                break;
-              }
-            }
-          }
-        }
-        
-        // Extract name after GSTIN
-        const nameMatch = line.match(/[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}(.*?)(?:IGST STLMT|$)/);
-        if (nameMatch) {
-          currentName = nameMatch[1]
-            .replace(/^M\/S\.?\s*/i, '') // Remove M/S. or M/S
-            .replace(/^M\/S\s*/i, '')    // Remove M/S
-            .replace(/\s+IGST\s+STLMT/i, '') // Remove IGST STLMT
-            .replace(/\s+CTI/i, '')      // Remove CTI
-            .replace(/\s+STO/i, '')      // Remove STO
-            .trim();
-          console.log('Found name from GSTIN line:', currentName); // Debug log
-          isCollectingName = true;
-          lookingForNumber = true;
-        }
-      } else if (!line.includes('JI') && isCollectingName) {
-        // If we're collecting a name and this line doesn't contain 'JI', append it
-        const additionalName = line
+      // Start new contact
+      currentGSTIN = gstinMatch[1];
+      currentName = 'Unknown';
+      currentPhoneNumber = '';
+      
+      // Try to extract name after GSTIN
+      const afterGSTIN = line.substring(line.indexOf(currentGSTIN) + currentGSTIN.length);
+      if (afterGSTIN) {
+        const nameValue = afterGSTIN
           .replace(/^M\/S\.?\s*/i, '')
           .replace(/^M\/S\s*/i, '')
           .replace(/\s+IGST\s+STLMT/i, '')
@@ -179,53 +195,67 @@ const extractContacts = (text) => {
           .replace(/\s+STO/i, '')
           .trim();
         
-        if (additionalName) {
-          currentName = (currentName + ' ' + additionalName).trim();
-          console.log('Appended to name:', currentName); // Debug log
+        if (nameValue && !nameValue.includes('JI')) {
+          currentName = nameValue;
         }
       }
-    }
-    
-    // Check if the next line contains a phone number
-    if (currentName && !currentPhoneNumber && index < dataLines.length - 1) {
-      // Look ahead up to 3 lines for a phone number
-      for (let i = 1; i <= 3; i++) {
-        if (index + i < dataLines.length) {
-          const nextLine = dataLines[index + i];
-          const nextPhoneMatch = nextLine.match(/\d{10}/);
-          if (nextPhoneMatch) {
-            currentPhoneNumber = nextPhoneMatch[0];
-            console.log('Found phone number in next lines:', currentPhoneNumber); // Debug log
-            contacts.push({
-              name: currentName,
-              phoneNumber: currentPhoneNumber
-            });
-            currentName = '';
-            currentPhoneNumber = '';
-            isCollectingName = false;
-            lookingForNumber = false;
-            break;
+      
+      // Look ahead for phone number in next 3 lines
+      for (let j = 1; j <= 3 && i + j < dataLines.length; j++) {
+        const nextLine = dataLines[i + j].trim();
+        const phoneMatch = nextLine.match(/\d{10}/);
+        if (phoneMatch) {
+          currentPhoneNumber = phoneMatch[0];
+          break;
+        }
+      }
+    } else {
+      // If not a GSTIN line, check for phone number
+      const phoneMatch = line.match(/\d{10}/);
+      if (phoneMatch) {
+        currentPhoneNumber = phoneMatch[0];
+        
+        // If we have all required info, save the contact
+        if (currentPhoneNumber && /^\d{10}$/.test(currentPhoneNumber)) {
+          contacts.push({
+            name: currentName,
+            phoneNumber: currentPhoneNumber,
+            gstin: currentGSTIN || ''
+          });
+          
+          // Reset for next contact
+          currentName = 'Unknown';
+          currentPhoneNumber = '';
+          currentGSTIN = '';
+        }
+      } else if (!line.includes('JI')) {
+        // If line doesn't contain GSTIN, phone, or "JI", it might be additional name info
+        const nameValue = line
+          .replace(/^M\/S\.?\s*/i, '')
+          .replace(/^M\/S\s*/i, '')
+          .replace(/\s+IGST\s+STLMT/i, '')
+          .replace(/\s+CTI/i, '')
+          .replace(/\s+STO/i, '')
+          .trim();
+        
+        if (nameValue) {
+          if (currentName === 'Unknown') {
+            currentName = nameValue;
+          } else {
+            currentName = `${currentName} ${nameValue}`.trim();
           }
         }
       }
     }
-  });
+  }
   
-  // Final check for any remaining entries
-  if (currentName && lookingForNumber) {
-    // Look at the last few lines for any remaining phone numbers
-    const lastLines = dataLines.slice(-5); // Look at the last 5 lines
-    for (const line of lastLines) {
-      const phoneMatch = line.match(/\d{10}/);
-      if (phoneMatch) {
-        console.log('Found final phone number:', phoneMatch[0]); // Debug log
-        contacts.push({
-          name: currentName,
-          phoneNumber: phoneMatch[0]
-        });
-        break;
-      }
-    }
+  // Handle any remaining contact at the end
+  if (currentPhoneNumber && /^\d{10}$/.test(currentPhoneNumber)) {
+    contacts.push({
+      name: currentName,
+      phoneNumber: currentPhoneNumber,
+      gstin: currentGSTIN || ''
+    });
   }
   
   console.log('Extracted contacts:', contacts); // Debug log
@@ -259,14 +289,32 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
     const savedContacts = await Promise.all(
       contacts.map(async (contact) => {
         try {
-          return await Contact.findOneAndUpdate(
-            { phoneNumber: contact.phoneNumber },
-            { 
-              phoneNumber: contact.phoneNumber,
-              name: contact.name
-            },
-            { upsert: true, new: true }
-          );
+          // First check if contact exists
+          const existingContact = await Contact.findOne({ phoneNumber: contact.phoneNumber });
+          
+          // If contact exists, we'll reset its status to pending
+          if (existingContact) {
+            return await Contact.findOneAndUpdate(
+              { phoneNumber: contact.phoneNumber },
+              { 
+                phoneNumber: contact.phoneNumber,
+                name: contact.name,
+                gstin: contact.gstin || '',
+                called: false,  // Reset to not called
+                callDate: null  // Clear call date
+              },
+              { new: true }
+            );
+          }
+          
+          // If contact doesn't exist, create new one
+          return await Contact.create({
+            phoneNumber: contact.phoneNumber,
+            name: contact.name,
+            gstin: contact.gstin || '',
+            called: false,
+            callDate: null
+          });
         } catch (error) {
           console.error(`Error saving contact ${contact.phoneNumber}:`, error);
           return null;
@@ -274,10 +322,14 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       })
     );
 
+    // Count how many were updated vs new
+    const updatedCount = savedContacts.filter(c => c && c.callDate === null).length;
+    const totalCount = savedContacts.filter(n => n).length;
+
     res.json({ 
       success: true, 
       contacts: savedContacts.filter(n => n),
-      message: `Successfully processed ${savedContacts.filter(n => n).length} contacts`
+      message: `Successfully processed ${totalCount} contacts (${updatedCount} reset to pending)`
     });
   } catch (error) {
     console.error('File processing error:', error);

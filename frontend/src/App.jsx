@@ -367,6 +367,12 @@ function App() {
                         )}
                       </div>
                       
+                      {contact.gstin && (
+                        <div className="text-sm text-gray-500 select-none">
+                          GSTIN: {contact.gstin}
+                        </div>
+                      )}
+                      
                       {contact.called && contact.callDate && (
                         <div className="text-sm text-gray-500 select-none">
                           Contacted on: {formatDate(contact.callDate)}
