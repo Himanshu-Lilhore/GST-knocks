@@ -19,8 +19,15 @@ const contactSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  callDate: {
+  isArchieved: {
+    type: Boolean,
+    default: false
+  },
+  history: [{
     type: Date
+  }],
+  notes: {
+    type: String
   }
 }, {
   timestamps: true

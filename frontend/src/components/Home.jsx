@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { Toaster, toast } from 'react-hot-toast';
-import { PhoneIcon, CheckCircleIcon, TrashIcon, ChevronDownIcon, ClockIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid';
+import { PhoneIcon, CheckCircleIcon, TrashIcon, ChevronDownIcon, ClockIcon, MagnifyingGlassIcon, XMarkIcon } from '@heroicons/react/24/solid';
+import Archieves from './Archives';
+import { useNavigate } from 'react-router-dom';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
 
-function App() {
+export default function Home() {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expandedCards, setExpandedCards] = useState(new Set());
@@ -20,6 +22,7 @@ function App() {
   const [newName, setNewName] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newGstin, setNewGstin] = useState('');
+  const navigate = useNavigate()
 
 
   useEffect(() => {
@@ -66,8 +69,8 @@ function App() {
 
   const handleDelete = async (contactId) => {
     try {
-      await axios.delete(`${BACKEND_URL}/api/contacts/${contactId}`);
-      toast.success('Contact deleted successfully');
+      const res = await axios.delete(`${BACKEND_URL}/api/contacts/${contactId}`);
+      toast.success(res.data.message);
       fetchContacts();
     } catch (error) {
       toast.error('Failed to delete contact');
@@ -130,6 +133,18 @@ function App() {
     }
   };
 
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setShowSuggestions(false);
+  };
+
+  const handleSuggestionClick = (contact) => {
+    setFilter('all'); // Switch to the "all" tab
+    setSearchQuery(contact.name);
+    setShowSuggestions(false);
+    setSelectedContactId(contact._id);
+    setHighlightedContactId(contact._id); // Highlight the selected contact
+  };
 
   const getContactStatus = (contact) => {
     if (!contact.called) return 'Pending';
@@ -203,12 +218,10 @@ function App() {
   }, [selectedContactId]);
 
   return (
-    <div className="min-h-screen bg-gray-100 p-4">
+    <div className="min-h-screen">
       <Toaster position="top-right" />
 
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-4xl font-extrabold text-center mb-4">GST knocks</h1>
-
         {/* Combined File Upload and Add Contact Button Container */}
         <div className="bg-white rounded-lg shadow p-6 mb-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <input
@@ -230,7 +243,7 @@ function App() {
           </button>
         </div>
 
-        {/* Add Contact Form */}
+        {/* Manual input Form */}
         <div
           className={`overflow-hidden transition-all duration-400 ease-in-out ${showAddContact ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}
         >
@@ -301,6 +314,13 @@ function App() {
               }}
               className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
+            {/* Clear button */}
+            {searchQuery && (
+              <XMarkIcon
+                className="absolute right-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400 cursor-pointer"
+                onClick={handleClearSearch}
+              />
+            )}
           </div>
 
           {/* Suggestions dropdown */}
@@ -311,12 +331,7 @@ function App() {
                   key={contact._id}
                   className={`px-4 py-2 hover:bg-gray-50 cursor-pointer ${index !== suggestions.length - 1 ? 'border-b border-gray-100' : ''
                     }`}
-                  onClick={() => {
-                    setSearchQuery(contact.name);
-                    setShowSuggestions(false);
-                    setFilter('all');
-                    setSelectedContactId(contact._id);
-                  }}
+                  onClick={() => handleSuggestionClick(contact)}
                 >
                   <div className="font-medium">{contact.name}</div>
                   <div className="text-sm text-gray-500">{contact.phoneNumber}</div>
@@ -420,7 +435,7 @@ function App() {
                 </div>
 
                 <div
-                  className={`overflow-hidden transition-all duration-300 ease-in-out ${expandedCards.has(contact._id) ? 'max-h-40 opacity-100' : 'max-h-0 opacity-0'
+                  className={`overflow-hidden transition-all duration-300 ease-in-out ${expandedCards.has(contact._id) ? 'max-h-80 opacity-100' : 'max-h-0 opacity-0'
                     }`}
                 >
                   <div className="mt-4 pt-4 border-t border-gray-100">
@@ -462,14 +477,20 @@ function App() {
                       </div>
 
                       {contact.gstin && (
-                        <div className="text-sm text-gray-500 select-none mt-2">
-                          GSTIN: {contact.gstin}
+                        <div className="flex gap-2 text-sm text-gray-500 select-none mt-2">
+                          <div className='text-black font-bold'>GSTIN</div>
+                          <div>{contact.gstin}</div>
                         </div>
                       )}
 
-                      {contact.called && contact.callDate && (
-                        <div className="text-sm text-gray-500 select-none">
-                          Contacted on: {formatDate(contact.callDate)}
+                      {contact.history && contact.history.length > 0 && (
+                        <div className="text-sm text-gray-500 select-none mt-2">
+                          <div className='text-black font-bold'>Contact history ({contact.history.length})</div>
+                          <div className='max-h-24 overflow-auto'>
+                            {contact.history.map((record, index) => {
+                              return <div key={index} className='px-4'>{formatDate(record)}</div>
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -482,6 +503,4 @@ function App() {
       </div>
     </div>
   );
-}
-
-export default App; 
+} 

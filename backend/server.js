@@ -5,6 +5,7 @@ const pdf = require('pdf-parse');
 const xlsx = require('xlsx');
 const cors = require('cors');
 const Contact = require('./models/Contact');
+const Archive = require('./models/Archive');
 require('dotenv').config();
 
 const app = express();
@@ -33,9 +34,9 @@ app.use(express.json());
 const upload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (req, file, cb) => {
-    if (file.mimetype === 'application/pdf' || 
-        file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        file.mimetype === 'application/vnd.ms-excel') {
+    if (file.mimetype === 'application/pdf' ||
+      file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      file.mimetype === 'application/vnd.ms-excel') {
       cb(null, true);
     } else {
       cb(new Error('Only PDF and Excel files are allowed!'), false);
@@ -53,56 +54,56 @@ const extractContactsFromExcel = (buffer) => {
   const workbook = xlsx.read(buffer);
   const firstSheetName = workbook.SheetNames[0];
   const worksheet = workbook.Sheets[firstSheetName];
-  
+
   // Convert sheet to JSON
   const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
   // console.log('Excel rows:', rows); // Debug log
-  
+
   const contacts = [];
-  
+
   // Find column indices from header row
   const headerRow = rows[0] || [];
-  
+
   // Find GSTIN column (usually contains business registration numbers)
-  const gstinColumnIndex = headerRow.findIndex(col => 
+  const gstinColumnIndex = headerRow.findIndex(col =>
     typeof col === 'string' && col.toUpperCase().includes('GSTIN')
   );
-  
+
   // Find name column - look for variations
-  const nameColumnIndex = headerRow.findIndex(col => 
+  const nameColumnIndex = headerRow.findIndex(col =>
     typeof col === 'string' && (
       col.toUpperCase().includes('TRADE NAME') ||
       col.toUpperCase().includes('NAME') ||
       col.toUpperCase().includes('BUSINESS')
     )
   );
-  
+
   // Find phone column - look for variations
-  const phoneColumnIndex = headerRow.findIndex(col => 
+  const phoneColumnIndex = headerRow.findIndex(col =>
     typeof col === 'string' && (
       col.toUpperCase().includes('MOBILE') ||
       col.toUpperCase().includes('PHONE') ||
       col.toUpperCase().includes('CONTACT')
     )
   );
-  
+
   // console.log('Column indices - GSTIN:', gstinColumnIndex, 'Name:', nameColumnIndex, 'Phone:', phoneColumnIndex);
-  
+
   // Skip header row
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (!row) continue; // Skip empty rows
-    
+
     let name = 'Unknown';
     let phoneNumber = '';
     let gstin = '';
-    
+
     // First try to get phone number - we'll look in all columns if needed
     if (phoneColumnIndex !== -1) {
       // Try the identified phone column first
       phoneNumber = row[phoneColumnIndex]?.toString().trim() || '';
     }
-    
+
     // If phone number not found in the expected column, look through all columns
     if (!phoneNumber || !/^\d{10}$/.test(phoneNumber)) {
       for (let j = 0; j < row.length; j++) {
@@ -113,7 +114,7 @@ const extractContactsFromExcel = (buffer) => {
         }
       }
     }
-    
+
     // Try to get name from the name column if it exists
     if (nameColumnIndex !== -1 && row[nameColumnIndex]) {
       const nameValue = row[nameColumnIndex]?.toString().trim() || '';
@@ -127,18 +128,18 @@ const extractContactsFromExcel = (buffer) => {
           .trim();
       }
     }
-    
+
     // Get GSTIN if available
     if (gstinColumnIndex !== -1 && row[gstinColumnIndex]) {
       gstin = row[gstinColumnIndex]?.toString().trim() || '';
     }
-    
+
     // If we have a valid phone number, add the contact (name will be "Unknown" if not found)
     if (phoneNumber && /^\d{10}$/.test(phoneNumber)) {
       contacts.push({ name, phoneNumber, gstin });
     }
   }
-  
+
   // console.log('Extracted contacts from Excel:', contacts); // Debug log
   return contacts;
 };
@@ -146,27 +147,27 @@ const extractContactsFromExcel = (buffer) => {
 // Extract contacts from text
 const extractContacts = (text) => {
   // console.log('Raw PDF text:', text); // Debug log
-  
+
   // Split text into lines and remove empty lines
   const lines = text.split('\n').filter(line => line.trim());
   // console.log('Lines:', lines); // Debug log
-  
+
   // Skip the header lines
   const dataLines = lines.slice(3); // Skip SR NO, GSTIN line, and OFFICER NAME line
   // console.log('Data lines:', dataLines); // Debug log
-  
+
   const contacts = [];
   let currentName = 'Unknown';
   let currentPhoneNumber = '';
   let currentGSTIN = '';
-  
+
   // Process each line
   for (let i = 0; i < dataLines.length; i++) {
     const line = dataLines[i].trim();
     if (!line || /^\d+$/.test(line)) continue; // Skip empty lines and lines that are just numbers
-    
+
     // console.log('Processing line:', line); // Debug log
-    
+
     // Try to find GSTIN first as it's the most reliable identifier
     const gstinMatch = line.match(/([0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1})/);
     if (gstinMatch) {
@@ -178,12 +179,12 @@ const extractContacts = (text) => {
           gstin: currentGSTIN || ''
         });
       }
-      
+
       // Start new contact
       currentGSTIN = gstinMatch[1];
       currentName = 'Unknown';
       currentPhoneNumber = '';
-      
+
       // Try to extract name after GSTIN
       const afterGSTIN = line.substring(line.indexOf(currentGSTIN) + currentGSTIN.length);
       if (afterGSTIN) {
@@ -194,12 +195,12 @@ const extractContacts = (text) => {
           .replace(/\s+CTI/i, '')
           .replace(/\s+STO/i, '')
           .trim();
-        
+
         if (nameValue && !nameValue.includes('JI')) {
           currentName = nameValue;
         }
       }
-      
+
       // Look ahead for phone number in next 3 lines
       for (let j = 1; j <= 3 && i + j < dataLines.length; j++) {
         const nextLine = dataLines[i + j].trim();
@@ -214,7 +215,7 @@ const extractContacts = (text) => {
       const phoneMatch = line.match(/\d{10}/);
       if (phoneMatch) {
         currentPhoneNumber = phoneMatch[0];
-        
+
         // If we have all required info, save the contact
         if (currentPhoneNumber && /^\d{10}$/.test(currentPhoneNumber)) {
           contacts.push({
@@ -222,7 +223,7 @@ const extractContacts = (text) => {
             phoneNumber: currentPhoneNumber,
             gstin: currentGSTIN || ''
           });
-          
+
           // Reset for next contact
           currentName = 'Unknown';
           currentPhoneNumber = '';
@@ -237,7 +238,7 @@ const extractContacts = (text) => {
           .replace(/\s+CTI/i, '')
           .replace(/\s+STO/i, '')
           .trim();
-        
+
         if (nameValue) {
           if (currentName === 'Unknown') {
             currentName = nameValue;
@@ -248,7 +249,7 @@ const extractContacts = (text) => {
       }
     }
   }
-  
+
   // Handle any remaining contact at the end
   if (currentPhoneNumber && /^\d{10}$/.test(currentPhoneNumber)) {
     contacts.push({
@@ -257,7 +258,7 @@ const extractContacts = (text) => {
       gstin: currentGSTIN || ''
     });
   }
-  
+
   // console.log('Extracted contacts:', contacts); // Debug log
   return contacts;
 };
@@ -267,7 +268,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
   try {
     console.log('Processing file:', req.file.mimetype);
     let contacts;
-    
+
     if (req.file.mimetype === 'application/pdf') {
       const pdfData = await pdf(req.file.buffer);
       contacts = extractContacts(pdfData.text);
@@ -275,13 +276,13 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       // Excel file
       contacts = extractContactsFromExcel(req.file.buffer);
     }
-    
+
     console.log('Number of contacts extracted:', contacts.length);
 
     if (contacts.length === 0) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'No contacts found in the file. Please check the format.' 
+      return res.status(400).json({
+        success: false,
+        error: 'No contacts found in the file. Please check the format.'
       });
     }
 
@@ -291,29 +292,28 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
         try {
           // First check if contact exists
           const existingContact = await Contact.findOne({ phoneNumber: contact.phoneNumber });
-          
+
           // If contact exists, we'll reset its status to pending
           if (existingContact) {
             return await Contact.findOneAndUpdate(
               { phoneNumber: contact.phoneNumber },
-              { 
+              {
                 phoneNumber: contact.phoneNumber,
                 name: contact.name,
                 gstin: contact.gstin || '',
                 called: false,  // Reset to not called
-                callDate: null  // Clear call date
+                isArchieved: false
               },
               { new: true }
             );
           }
-          
+
           // If contact doesn't exist, create new one
           return await Contact.create({
             phoneNumber: contact.phoneNumber,
             name: contact.name,
             gstin: contact.gstin || '',
             called: false,
-            callDate: null
           });
         } catch (error) {
           console.error(`Error saving contact ${contact.phoneNumber}:`, error);
@@ -322,14 +322,12 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
       })
     );
 
-    // Count how many were updated vs new
-    const updatedCount = savedContacts.filter(c => c && c.callDate === null).length;
     const totalCount = savedContacts.filter(n => n).length;
 
-    res.json({ 
-      success: true, 
+    res.json({
+      success: true,
       contacts: savedContacts.filter(n => n),
-      message: `Successfully processed ${totalCount} contacts (${updatedCount} reset to pending)`
+      message: `Successfully processed ${totalCount} contacts`
     });
   } catch (error) {
     console.error('File processing error:', error);
@@ -340,9 +338,8 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 // Get all contacts
 app.get('/api/contacts', async (req, res) => {
   try {
-    const contacts = await Contact.find().sort({ 
+    const contacts = await Contact.find({ isArchieved: false }).sort({
       called: 1,  // Uncalled contacts first
-      callDate: -1,  // Most recently called first within called contacts
       createdAt: 1  // For uncalled contacts, oldest first
     });
     res.json(contacts);
@@ -354,16 +351,10 @@ app.get('/api/contacts', async (req, res) => {
 // Update contact status
 app.put('/api/contacts/:id', async (req, res) => {
   try {
-    const { status } = req.body;
-    const update = status === 'pending' 
-      ? { called: false, callDate: null }
-      : { called: true, callDate: new Date() };
-    
-    const contact = await Contact.findByIdAndUpdate(
-      req.params.id,
-      update,
-      { new: true }
-    );
+    let contact = await Contact.findById(req.params.id);
+    contact.called = true;
+    contact.history = [new Date(), ...contact.history];
+    await contact.save();
     res.json(contact);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -373,8 +364,11 @@ app.put('/api/contacts/:id', async (req, res) => {
 // Delete contact
 app.delete('/api/contacts/:id', async (req, res) => {
   try {
-    await Contact.findByIdAndDelete(req.params.id);
-    res.json({ success: true });
+    let contact = await Contact.findById(req.params.id);
+    contact.isArchieved = true;
+    contact.called=true;
+    await contact.save();
+    res.json({ success: true, message: "Contact archived" });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -385,33 +379,99 @@ app.delete('/api/contacts/:id', async (req, res) => {
 app.post('/api/contacts', async (req, res) => {
   try {
     const { name, phoneNumber, gstin } = req.body;
-    
+
     // Check required fields
     if (!name || !phoneNumber) {
       return res.status(400).json({ success: false, error: 'Name and phone number are required' });
     }
-    
+
     // Check for duplicate contact by phone number
     const existingContact = await Contact.findOne({ phoneNumber });
     if (existingContact) {
       return res.status(400).json({ success: false, error: 'Contact with this phone number already exists' });
     }
-    
+
     // Create new contact with status "pending" (i.e. not called)
     const newContact = await Contact.create({
       name,
       phoneNumber,
       gstin: gstin || '',
-      called: false,
-      callDate: null
+      called: false
     });
-    
+
     res.json({ success: true, contact: newContact });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
+// Archive all current contacts
+app.post('/api/archive', async (req, res) => {
+  try {
+    // Fetch all current contacts
+    const contacts = await Contact.find({ isArchieved: false });
+
+    if (contacts.length === 0) return res.status(200).json({ success: true, message: 'Nothing to archive' });
+
+    // Create a single archive object
+    const archive = new Archive({
+      contacts: contacts
+    });
+
+    // Save the archive object
+    await archive.save();
+
+    // archieve contacts
+    await Promise.all(
+      contacts.map(async (contact) => {
+        contact.isArchieved = true;
+        return contact.save();
+      })
+    );
+
+    res.status(200).json({ success: true, message: 'Contacts archived successfully' });
+  } catch (error) {
+    console.error('Error archiving contacts:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Get all archives
+app.get('/api/archives', async (req, res) => {
+  try {
+    const archives = await Archive.find();
+    res.status(200).json(archives);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+// Get an archive (with contacts)
+app.get('/api/archive/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    let archive = await Archive.findOne({ _id: id });
+    const temp = await Promise.all(
+      archive.contacts.map((contactId) => {
+        return Contact.findOne({ _id: contactId })
+      })
+    );
+    archive.contacts = temp;
+    res.status(200).json(archive);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get a contact
+app.get('/api/contact/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const contact = await Contact.find({ _id: id });
+    res.status(200).json(contact);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`)); 
