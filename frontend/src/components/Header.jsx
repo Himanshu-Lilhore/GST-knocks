@@ -8,7 +8,7 @@ export default function Header({ onHamburgerClick }) {
         <div className="flex flex-row justify-between items-center p-4 bg-gray-100">
             <button
                 className="text-4xl font-extrabold cursor-pointer"
-                onClick={() => navigate('/GST-knocks/home')}
+                onClick={() => navigate('/GST-knocks')}
             >
                 GST knocks
             </button>

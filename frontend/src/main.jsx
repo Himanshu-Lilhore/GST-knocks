@@ -23,10 +23,6 @@ const router = createBrowserRouter([
         element: <ViewArchive />,
       },
       {
-        path: "/GST-knocks/home",
-        element: <Home />,
-      },
-      {
         path: "/GST-knocks/",
         element: <Home />,
       }

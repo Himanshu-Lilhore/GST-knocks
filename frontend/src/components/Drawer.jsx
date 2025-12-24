@@ -14,7 +14,7 @@ export default function Drawer({ isOpen, onClose }) {
         try {
             const res = await axios.post(`${BACKEND_URL}/api/archive`);
             toast.success(res.data.message);
-            if(res.status === 200) {navigate('/GST-knocks/home'); window.location.reload();}
+            if(res.status === 200) {navigate('/GST-knocks'); window.location.reload();}
         } catch (error) {
             toast.error('Failed to archive contacts');
         }
@@ -40,7 +40,7 @@ export default function Drawer({ isOpen, onClose }) {
                         </button>
                     </div>
 
-                    <Link to="/GST-knocks/home" onClick={onClose} className={navStyles}>
+                    <Link to="/GST-knocks" onClick={onClose} className={navStyles}>
                         Home
                     </Link>
 
